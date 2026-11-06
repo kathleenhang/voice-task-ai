@@ -6,6 +6,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+import textwrap
 
 import requests
 
@@ -94,6 +95,46 @@ def task_line(task: dict) -> str:
     due = f" (due {task['due_date']})" if task['due_date'] else ''
     return f'- [ ] {description}{due}'
 
+def format_transcript(
+    transcript: str,
+    max_words: int = 60,
+    line_width: int = 80,
+) -> str:
+    """Format a transcript into readable paragraphs."""
+
+    # Normalize whitespace.
+    transcript = " ".join(transcript.split())
+
+    # Split at sentence boundaries.
+    sentences = re.split(r"(?<=[.!?])\s+", transcript)
+
+    paragraphs = []
+    current = []
+    word_count = 0
+
+    for sentence in sentences:
+        count = len(sentence.split())
+
+        if current and word_count + count > max_words:
+            paragraphs.append(" ".join(current))
+            current = []
+            word_count = 0
+
+        current.append(sentence)
+        word_count += count
+
+    if current:
+        paragraphs.append(" ".join(current))
+
+    return "\n\n".join(
+        textwrap.fill(
+            paragraph,
+            width=line_width,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+        for paragraph in paragraphs
+    )
 
 def save_outputs(audio: Path, digest: str, transcript: str, tasks: list[dict]) -> Path:
     TRANSCRIPTS.mkdir(parents=True, exist_ok=True)
@@ -101,10 +142,17 @@ def save_outputs(audio: Path, digest: str, transcript: str, tasks: list[dict]) -
     # Stable path allows a safe rerun after an interrupted save.
     slug = re.sub(r'[^A-Za-z0-9_-]+', '-', audio.stem).strip('-') or 'voice-note'
     note = TRANSCRIPTS / f'{slug}-{digest[:12]}.md'
+
+    formatted_transcript = format_transcript(
+        transcript,
+        max_words=60,
+        line_width=80,
+    )
+
     content = (
         f'# Voice note: {audio.stem}\n\n'
         f'Source audio: `{audio.name}`\n\n'
-        f'## Transcript\n\n{transcript}\n\n'
+        f'## Transcript\n\n{formatted_transcript}\n\n'
         f'## Extracted tasks\n\n'
         + ('\n'.join(map(task_line, tasks)) if tasks else 'No tasks detected.')
         + '\n'
